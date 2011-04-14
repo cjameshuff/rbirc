@@ -22,7 +22,10 @@
 # THE SOFTWARE.
 #*******************************************************************************
 
+$: << '.'
+
 require 'pp'
+require 'fileutils'
 require 'rbirc/rbirc'
 require 'json'
 require 'json/add/core'
@@ -38,7 +41,10 @@ else
         shortusername: 'ShortName',
         realusername: 'Long Name',
         nick: 'NickName',
-        joinchannel: '#somechannel'
+        joinchannel: '#somechannel',
+        logging: 'raw',
+        logdir: 'logs',
+        logfileprefix: 'irclog_'
     }
     # Again, JSON expects string keys, so convert them before writing
     File.open('ircopts.json', 'w') {|f|
@@ -46,8 +52,48 @@ else
     }
 end
 
+class ClientConnection < IRC::IRC_Connection
+    def initialize(server, port, options = {})
+        super(server, port, options)
+        
+        if(options[:logging] != nil)
+            if(!File.exists?(options[:logdir]))
+                FileUtils.mkdir_p(options[:logdir])
+            end
+            @lastlogged = Time.now
+            pp 
+            @logfile = File.open(logfilename(@lastlogged), 'a')
+        end
+    end
+    
+    def logfilename(t)
+        logfileprefix = options[:logfileprefix]
+        logdir = options[:logdir]
+        "#{logdir}/#{logfileprefix}#{sprintf('%0.4d.%0.2d.%0.2d', t.year, t.month, t.mday)}.txt"
+    end
+    
+    def rawlog(msg)
+        now = Time.now
+        if(now.mday != @lastlogged.mday)
+            @logfile.close()
+            @logfile = File.open(logfilename(now), 'a')
+        end
+        @lastlogged = now
+        @logfile.write(msg[:rawmsg])
+    end
 
-irc = IRC::IRC_Connection.new(opts[:server], opts[:port], opts)
+    def handle_msg(msg)
+        super(msg)
+        if(options[:logging] == "raw")
+            # Log everything but pings and pongs
+            if(msg[:cmd] != 'PING' && msg[:cmd] != 'PONG')
+                rawlog(msg)
+            end
+        end
+    end # handle_msg()
+end
+
+irc = ClientConnection.new(opts[:server], opts[:port], opts)
 irc.connect()
 irc.nick(opts[:nick])
 irc.join(opts[:joinchannel])

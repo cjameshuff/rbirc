@@ -41,6 +41,11 @@ DEFAULT_IRC_OPTS = {
 CTCP = '\001'
 
 class IRC_Connection
+    attr_reader :options, :connections
+    attr_reader :channels, :nick
+    attr_accessor :current_channel
+    attr_reader :server_info, :server_notices, :server_motd
+    
     def initialize(server, port, options = {})
         @time_disconnected = nil
         @connected = false
@@ -129,7 +134,7 @@ class IRC_Connection
         if(sel != nil)
             for src in sel[0]
                 if(src == @sock)
-                    handle_msg(src)
+                    handle_rawmsg(src)
                 else
                     handle_input(src)
                 end
@@ -142,6 +147,7 @@ class IRC_Connection
         @sock.send("#{msg}\r\n", 0)
     end
     
+    # Parses a raw IRC message string and hands it off to handle_msg().
     # Parsed message format:
     # {
     #     rawmsg: "raw message text",
@@ -150,7 +156,7 @@ class IRC_Connection
     #     params: [...],
     #     text: "last param"
     # }
-    def handle_msg(rawmsg)
+    def handle_rawmsg(rawmsg)
         if(@sock.eof?)
             puts "Disconnected!"
             @connected = false
@@ -173,6 +179,10 @@ class IRC_Connection
         msg[:cmd] = msg[:params].shift
         msg[:text] = parts[2].chomp
         
+        handle_msg(msg)
+    end
+    
+    def handle_msg(msg)
         sym = "rx_#{msg[:cmd].downcase}".to_sym
         if(self.respond_to?(sym))
             self.send(sym, msg)
