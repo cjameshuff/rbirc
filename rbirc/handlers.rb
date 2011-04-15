@@ -36,7 +36,8 @@ class IRC_Connection
     end
     
     def rx_pong(msg)
-        puts "Received pong: #{msg}"
+        update_lag(Time.now.to_f - msg[:text].to_f)
+        @waiting_for_pong = false
     end
     
     def rx_notice(msg)
@@ -45,12 +46,13 @@ class IRC_Connection
     end
     
     def rx_privmsg(msg)
-        puts "Received message: #{msg}"
+        channel = msg[:params][0]
+        puts "#{channel} <#{get_nick(msg)}>: #{msg[:text]}"
     end
     
     def rx_join(msg)
         # :Nick!Nick@blahblah.net JOIN :#SomeChannel
-        nick = msg[:prefix].partition('!')[1..-1]
+        nick = get_nick(msg)
         channel = msg[:text]
         puts "#{nick} joined #{msg[:text]}"
         

@@ -33,21 +33,22 @@ DEFAULT_IRC_OPTS = {
     shortusername: 'shortusername',
     realusername: 'Long User Name',
     usermode: 0,
-    auto_reconnect_time: 30,# seconds
-    poll_timeout_time: 1,
+    auto_reconnect_time: 30.0,# seconds
+    poll_timeout_time: 1.0,# seconds
+    ping_timeout_time: 90.0,# seconds, also used as ping interval
     select_sources: [$stdin]
 }
 
 CTCP = '\001'
 
 class IRC_Connection
-    attr_reader :options, :connections
+    attr_reader :options, :connections, :connected, :lag
     attr_reader :channels, :nick
     attr_accessor :current_channel
     attr_reader :server_info, :server_notices, :server_motd
     
     def initialize(server, port, options = {})
-        @time_disconnected = nil
+        @time_disconnected = Time.now
         @connected = false
         @server = server
         @port = port
@@ -61,6 +62,15 @@ class IRC_Connection
         @current_channel = nil
         
         @options = DEFAULT_IRC_OPTS.merge(options)
+        
+        @ping_start = 0
+        @lag = 0
+        @waiting_for_pong = false
+    end
+    
+    def update_lag(new_lag)
+        @lag = new_lag
+        puts "Lag: #{@lag}"
     end
     
     #----------------------------------------------------------------
@@ -75,17 +85,27 @@ class IRC_Connection
 #        send_irc("USER #{@options[:shortusername]} #{@options[:usermode]} * :#{@options[:realusername]}")
     end
     
-    def disconnect(reason = '')
-        send_irc("QUIT #{reason}")
+    def disconnect()
         @connected = false
         @sock.close()
         @sock = nil
         @time_disconnected = Time.now
     end
     
+    def quit(reason = '')
+        send_irc("QUIT #{reason}")
+        disconnect()
+    end
+    
     def nick(nickname)
         @nick = nickname
         send_irc("NICK #{@nick}")
+    end
+    
+    def ping()
+        @ping_start = Time.now.to_f
+        @waiting_for_pong = true
+        send_irc("PING :#{@ping_start}")
     end
     
     def join(channel)
@@ -117,6 +137,11 @@ class IRC_Connection
     
     #----------------------------------------------------------------
     
+    def get_nick(msg)
+        # :Nick!Nick@blahblah.net
+        nick = msg[:prefix].partition('!')[0][1..-1]
+    end
+    
     def poll()
         if(@sock == nil && @options[:auto_reconnect_time] != nil &&
            (Time.now - @time_disconnected).to_f > @options[:auto_reconnect_time])
@@ -140,6 +165,22 @@ class IRC_Connection
                 end
             end # for src in sel[0]
         end # (sel != nil)
+        
+        if(@connected && (Time.now.to_f - @ping_start) > @options[:ping_timeout_time])
+            if(@waiting_for_pong)
+                # Ping timeout
+                puts "Disconnected by ping timeout!"
+                disconnect()
+                
+                # assume disconnect had occurred at time of last ping, and correct
+                # the disconnect time to avoid overly long reconnect interval.
+                if(@options[:ping_timeout_time] != nil)
+                    @time_disconnected -= @options[:ping_timeout_time]
+                end
+            else
+                ping()
+            end
+        end
     end # poll()
     
     def send_irc(msg)
@@ -159,10 +200,7 @@ class IRC_Connection
     def handle_rawmsg(rawmsg)
         if(@sock.eof?)
             puts "Disconnected!"
-            @connected = false
-            @sock.close()
-            @sock = nil
-            @time_disconnected = Time.now
+            disconnect()
             return
         end
         

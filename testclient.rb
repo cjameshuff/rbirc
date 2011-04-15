@@ -30,28 +30,6 @@ require 'rbirc/rbirc'
 require 'json'
 require 'json/add/core'
 
-if(File.exists?('ircopts.json'))
-    opts = JSON.parse(File.read('ircopts.json'))
-    # JSON uses string keys, so convert them to symbols
-    opts.replace(opts.inject({}) {|h, (k, v)| h[k.to_sym] = v; h})
-else
-    opts = {
-        server: "irc.blahblah.net",
-        port: 6667,
-        shortusername: 'ShortName',
-        realusername: 'Long Name',
-        nick: 'NickName',
-        joinchannel: '#somechannel',
-        logging: 'raw',
-        logdir: 'logs',
-        logfileprefix: 'irclog_'
-    }
-    # Again, JSON expects string keys, so convert them before writing
-    File.open('ircopts.json', 'w') {|f|
-        f.write(JSON.pretty_generate(opts.inject({}) {|h, (k, v)| h[k.to_s] = v; h}))
-    }
-end
-
 class ClientConnection < IRC::IRC_Connection
     def initialize(server, port, options = {})
         super(server, port, options)
@@ -75,11 +53,13 @@ class ClientConnection < IRC::IRC_Connection
     def rawlog(msg)
         now = Time.now
         if(now.mday != @lastlogged.mday)
+            puts "Creating new log file #{logfilename(now)}"
             @logfile.close()
             @logfile = File.open(logfilename(now), 'a')
         end
         @lastlogged = now
         @logfile.write(msg[:rawmsg])
+        @logfile.flush()
     end
 
     def handle_msg(msg)
@@ -91,7 +71,31 @@ class ClientConnection < IRC::IRC_Connection
             end
         end
     end # handle_msg()
+end # class ClientConnection
+
+
+if(File.exists?('ircopts.json'))
+    opts = JSON.parse(File.read('ircopts.json'))
+    # JSON uses string keys, so convert them to symbols
+    opts.replace(opts.inject({}) {|h, (k, v)| h[k.to_sym] = v; h})
+else
+    opts = {
+        server: "irc.blahblah.net",
+        port: 6667,
+        shortusername: 'ShortName',
+        realusername: 'Long Name',
+        nick: 'NickName',
+        joinchannel: '#somechannel',
+        logging: 'raw',
+        logdir: 'logs',
+        logfileprefix: 'irclog_'
+    }
+    # Again, JSON expects string keys, so convert them before writing
+    File.open('ircopts.json', 'w') {|f|
+        f.write(JSON.pretty_generate(opts.inject({}) {|h, (k, v)| h[k.to_s] = v; h}))
+    }
 end
+
 
 irc = ClientConnection.new(opts[:server], opts[:port], opts)
 irc.connect()
