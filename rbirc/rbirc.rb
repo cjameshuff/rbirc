@@ -41,6 +41,36 @@ DEFAULT_IRC_OPTS = {
 
 CTCP = '\001'
 
+class IRC_Msg
+    attr_reader :prefix, :rawmsg, :cmd, :params, :text
+    def initialize(rawmsg)
+#         puts rawmsg
+        @rawmsg = rawmsg
+        if(rawmsg[0] == ':')
+            parts = rawmsg.partition(' ')
+            @prefix = parts[0]
+            rawmsg = parts[2]
+        end
+        parts = rawmsg.partition(' :')
+        @params = parts[0].split(' ')
+        @cmd = @params.shift
+        @text = parts[2].chomp
+    end
+    
+    def nick()
+        # :Nick!Nick@blahblah.net
+        @prefix.partition('!')[0][1..-1]
+    end
+    
+    def channel()
+        if(cmd == 'PRIVMSG')
+            params[0]
+        else
+            nil
+        end
+    end
+end
+
 class IRC_Connection
     attr_reader :options, :connections, :connected, :lag
     attr_reader :channels, :nick
@@ -93,8 +123,13 @@ class IRC_Connection
     end
     
     def quit(reason = '')
-        send_irc("QUIT #{reason}")
+        if(reason != '')
+            send_irc("QUIT :#{reason}")
+        else
+            send_irc("QUIT")
+        end
         disconnect()
+        exit()
     end
     
     def nick(nickname)
@@ -118,29 +153,52 @@ class IRC_Connection
         @current_channel = @channels[channel]
     end
     
+    # TODO: straighten out channel-specific commands...keep "current channel"?
+    # Or always specify channel?
     def send_msg(msg, channel)
         prefix = "PRIVMSG #{channel} :"
         max_len = 255 - prefix.length
-       while(msg.length > 0)
+        while(msg.length > 0)
             send_irc(prefix + msg.slice!(0, max_len))
-       end
+        end
+    end
+    
+    def send_action_msg(msg, channel)
+        # wrap each message chunk in CTCP ACTION
+        # May be better to wrap only first chunk of messages long enough to need splitting.
+        msg = msg[4, msg.length]# cut off '/me '
+        prefix = "PRIVMSG #{channel} :"
+        max_len = 255 - prefix.length - 8
+        while(msg.length > 0)
+            send_irc(prefix + "\001ACTION #{msg.slice!(0, max_len)}\001")
+        end
     end
     
     def handle_input(src)
-        input = src.gets()
-        if(@current_channel)
-            send_msg(input, @current_channel[:name])
+        input = src.gets().chomp
+        # TODO: /part /msg /notice /whois /whowas, others...
+        if(input.start_with?('/join '))
+            join(input.split(' ')[1])
+        elsif(input.start_with?('/nick '))
+            nick(input.split(' ')[1])
+        elsif(input.start_with?('/quit'))
+            quit(input.partition(' ')[1])
+        elsif(input.start_with?('/me '))
+            if(@current_channel)
+                send_action_msg(input, @current_channel[:name])
+            else
+                puts "Not in any channel!"
+            end
         else
-            puts "Not in any channel!"
+            if(@current_channel)
+                send_msg(input, @current_channel[:name])
+            else
+                puts "Not in any channel!"
+            end
         end
     end
     
     #----------------------------------------------------------------
-    
-    def get_nick(msg)
-        # :Nick!Nick@blahblah.net
-        nick = msg[:prefix].partition('!')[0][1..-1]
-    end
     
     def poll()
         if(@sock == nil && @options[:auto_reconnect_time] != nil &&
@@ -159,7 +217,7 @@ class IRC_Connection
         if(sel != nil)
             for src in sel[0]
                 if(src == @sock)
-                    handle_rawmsg(src)
+                    handle_msg(IRC_Msg.new(src.gets()))
                 else
                     handle_input(src)
                 end
@@ -184,44 +242,12 @@ class IRC_Connection
     end # poll()
     
     def send_irc(msg)
-        puts "<< #{msg}"
+        pp "<< #{msg}"
         @sock.send("#{msg}\r\n", 0)
     end
     
-    # Parses a raw IRC message string and hands it off to handle_msg().
-    # Parsed message format:
-    # {
-    #     rawmsg: "raw message text",
-    #     prefix: ":Nick!Nick@blahblah.net JOIN :#SomeChannel",
-    #     cmd: "IRC_COMMAND",
-    #     params: [...],
-    #     text: "last param"
-    # }
-    def handle_rawmsg(rawmsg)
-        if(@sock.eof?)
-            puts "Disconnected!"
-            disconnect()
-            return
-        end
-        
-        rawmsg = @sock.gets
-#         puts rawmsg
-        msg = {rawmsg: rawmsg}
-        if(rawmsg[0] == ':')
-            parts = rawmsg.partition(' ')
-            msg[:prefix] = parts[0]
-            rawmsg = parts[2]
-        end
-        parts = rawmsg.partition(' :')
-        msg[:params] = parts[0].split(' ')
-        msg[:cmd] = msg[:params].shift
-        msg[:text] = parts[2].chomp
-        
-        handle_msg(msg)
-    end
-    
     def handle_msg(msg)
-        sym = "rx_#{msg[:cmd].downcase}".to_sym
+        sym = "rx_#{msg.cmd.downcase}".to_sym
         if(self.respond_to?(sym))
             self.send(sym, msg)
         else

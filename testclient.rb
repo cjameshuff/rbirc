@@ -58,7 +58,7 @@ class ClientConnection < IRC::IRC_Connection
             @logfile = File.open(logfilename(now), 'a')
         end
         @lastlogged = now
-        @logfile.write(msg[:rawmsg])
+        @logfile.write(msg.rawmsg)
         @logfile.flush()
     end
 
@@ -66,7 +66,7 @@ class ClientConnection < IRC::IRC_Connection
         super(msg)
         if(options[:logging] == "raw")
             # Log everything but pings and pongs
-            if(msg[:cmd] != 'PING' && msg[:cmd] != 'PONG')
+            if(msg.cmd != 'PING' && msg.cmd != 'PONG')
                 rawlog(msg)
             end
         end
