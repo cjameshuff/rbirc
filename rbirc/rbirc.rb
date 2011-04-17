@@ -175,7 +175,10 @@ class IRC_Connection
     end
     
     def handle_input(src)
-        input = src.gets().chomp
+        handle_input_text(src.gets().chomp)
+    end
+    
+    def handle_input_text(input)
         # TODO: /part /msg /notice /whois /whowas, others...
         if(input.start_with?('/join '))
             join(input.split(' ')[1])
