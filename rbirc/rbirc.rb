@@ -50,6 +50,8 @@ class IRC_Msg
             parts = rawmsg.partition(' ')
             @prefix = parts[0]
             rawmsg = parts[2]
+        else
+            @prefix = ''
         end
         parts = rawmsg.partition(' :')
         @params = parts[0].split(' ')
