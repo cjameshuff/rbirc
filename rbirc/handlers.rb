@@ -88,7 +88,7 @@ class IRC_Connection
     
     def rx_quit(msg)
         puts "Received quit: #{msg.rawmsg}"
-        @channels.each {|ch|
+        @channels.each_value {|ch|
             if(!ch[:users].include?(msg.nick))
                 ch[:users].delete(msg.nick)
             end
