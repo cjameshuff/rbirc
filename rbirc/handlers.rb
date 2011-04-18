@@ -78,7 +78,7 @@ class IRC_Connection
     
     def rx_nick(msg)
         puts "#{msg.nick} is now known as #{msg.text}"
-        @channels.each {|ch|
+        @channels.each_value {|ch|
             if(!ch[:users].include?(msg.nick))
                 ch[:users].delete(msg.nick)
                 ch[:users].push(msg.text)
