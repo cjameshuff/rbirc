@@ -160,6 +160,7 @@ class IRC_Connection
     def send_msg(msg, channel)
         prefix = "PRIVMSG #{channel} :"
         max_len = 255 - prefix.length
+        msg = msg.dup()
         while(msg.length > 0)
             send_irc(prefix + msg.slice!(0, max_len))
         end
